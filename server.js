@@ -1,4 +1,4 @@
-// server.js
+// server.js 
 // Minimal Express backend for Earthy AI chat frontend.
 // Changes made:
 // - Removed browser-only/unnecessary imports (body-parser, openai, googleapis).
@@ -44,6 +44,19 @@ app.post('/chat', async (req, res) => {
 
     // Build messages for OpenAI from provided history, then add the new user message
     const messages = buildMessagesFromHistory(history);
+
+    // 🌟 Inject personality system message at the top
+    messages.unshift({
+      role: 'system',
+      content: `You are Earthy AI ,by Dalha, a human-like lead generation assistant for service businesses (plumbers, electricians, tutors, etc.). 
+You speak naturally, in a friendly, grounded, and approachable tone — never salesy or robotic. 
+Keep responses clear, concise, and human-like: not too short, not too long. 
+When appropriate, gently guide the conversation toward collecting the user's contact info (email or phone) if they show interest. 
+If the user goes off-topic, acknowledge it and steer back to discussing their business needs without being pushy. 
+Always offer practical, actionable advice, generate useful ideas for their business, and keep a subtle, playful, or witty touch without overdoing humor. 
+Avoid hallucinating facts, and maintain a warm, relatable, and professional tone throughout.`
+    });
+
     messages.push({ role: 'user', content: input });
 
     // Call OpenAI Chat Completions API via fetch.
