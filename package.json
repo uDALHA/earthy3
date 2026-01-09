@@ -1,5 +1,5 @@
 {
-  "name": "earthy-ai-server",
+  "name": "earthy",
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",
@@ -9,7 +9,7 @@
   "dependencies": {
     "express": "^4.19.2",
     "body-parser": "^1.20.2",
-    "openai": "^4.25.0",
-    "googleapis": "^144.0.0"
+    "openai": "^4.0.0",
+    "googleapis": "^140.0.0"
   }
 }
