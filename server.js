@@ -1,30 +1,31 @@
 // server.js
-// Minimal Express backend for Earthy AI (corporate entity version)
+// Earthy AI – Express backend with OpenAI chat + Resend lead capture
 
 const express = require('express');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
+/* ---------------------------
+   Environment variables
+---------------------------- */
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-if (!OPENAI_API_KEY) {
-  console.warn('Warning: OPENAI_API_KEY is not set.');
-}
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-nano';
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL;
+
+if (!OPENAI_API_KEY) console.warn('OPENAI_API_KEY is not set');
+if (!RESEND_API_KEY) console.warn('RESEND_API_KEY is not set');
+if (!LEAD_TO_EMAIL) console.warn('LEAD_TO_EMAIL is not set');
 
 /* ---------------------------
-   Nodemailer setup
+   Resend setup
 ---------------------------- */
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+const resend = new Resend(RESEND_API_KEY);
 
 /* ---------------------------
    Helper: build messages
@@ -90,7 +91,7 @@ No bullet points unless asked.`
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || 'gpt-4.1-nano',
+        model: OPENAI_MODEL,
         messages,
         max_tokens: 150,
         temperature: 0.6
@@ -138,9 +139,9 @@ app.post('/api/lead', async (req, res) => {
       return res.status(400).json({ success: false });
     }
 
-    await transporter.sendMail({
-      from: `"Earthy AI" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER,
+    await resend.emails.send({
+      from: 'Earthy AI <leads@resend.dev>',
+      to: LEAD_TO_EMAIL,
       subject: 'New Earthy AI Demo Interest',
       html: `
         <h3>New Demo Request</h3>
@@ -155,7 +156,7 @@ app.post('/api/lead', async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error('Email error:', err);
+    console.error('Resend error:', err);
     res.status(500).json({ success: false });
   }
 });
@@ -167,3 +168,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Earthy AI server running on port ${PORT}`);
 });
+
