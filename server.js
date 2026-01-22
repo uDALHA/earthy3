@@ -1,10 +1,9 @@
-// Earthy AI – Express backend (chat always works, email optional)
+// server.js
+// Earthy AI – Express backend with OpenAI chat only
 
 const express = require('express');
 const cors = require('cors');
-
-const fetch = (...args) =>
-  import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 app.use(cors());
@@ -22,29 +21,20 @@ app.get('/', (req, res) => {
 ---------------------------- */
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-nano';
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL;
 
-if (!OPENAI_API_KEY) console.warn('OPENAI_API_KEY not set');
+if (!OPENAI_API_KEY) console.warn('OPENAI_API_KEY is not set');
 
 /* ---------------------------
-   Resend (RUNTIME ONLY)
----------------------------- */
-let resend = null;
-if (RESEND_API_KEY) {
-  const { Resend } = require('resend');
-  resend = new Resend(RESEND_API_KEY);
-}
-
-/* ---------------------------
-   Helper
+   Helper: build messages
 ---------------------------- */
 function buildMessagesFromHistory(history = []) {
   if (!Array.isArray(history)) return [];
-  return history.map(m => ({
-    role: m.author === 'user' ? 'user' : 'assistant',
-    content: m.text
-  }));
+  return history
+    .filter(m => m && m.text && m.author)
+    .map(m => ({
+      role: m.author === 'user' ? 'user' : 'assistant',
+      content: m.text
+    }));
 }
 
 /* ---------------------------
@@ -52,20 +42,17 @@ function buildMessagesFromHistory(history = []) {
 ---------------------------- */
 app.post('/chat', async (req, res) => {
   try {
-    const { input, history = [] } = req.body;
-    if (!input) return res.status(400).json({ reply: 'Invalid input', history });
+    const { input, history = [] } = req.body || {};
+    if (!input || !input.trim()) return res.status(400).json({ reply: 'Invalid request', history });
 
     const messages = buildMessagesFromHistory(history);
-
     messages.unshift({
       role: 'system',
-      content:
-        'You are Earthy AI, a calm and helpful assistant for service businesses. 2–4 sentences. No emojis.'
+      content: `You are Earthy AI — official AI assistant. Answer clearly and confidently in 2-4 sentences.`
     });
-
     messages.push({ role: 'user', content: input });
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const openaiResp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
@@ -79,25 +66,19 @@ app.post('/chat', async (req, res) => {
       })
     });
 
-    const data = await response.json();
-    const reply =
-      data?.choices?.[0]?.message?.content || 'Can you clarify?';
+    const data = await openaiResp.json();
+    const reply = data?.choices?.[0]?.message?.content?.trim() || 'Could you clarify that?';
 
-    res.json({
-      reply,
-      history: [...history, { author: 'ai', text: reply }]
-    });
+    res.json({ reply, history: [...history, { author: 'ai', text: reply }] });
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ reply: 'Server error', history: [] });
+    res.status(500).json({ reply: 'Server error', history: req.body?.history || [] });
   }
 });
 
 /* ---------------------------
-   Lead capture (OPTIONAL)
+   Server start
 ---------------------------- */
-app.post('/api/lead', async (req, res) => {
-  if (!resend || !LEAD_TO_EMAIL)
-    return res.status(503).json({ success: false });
-
-  try {
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Earthy AI server running on port ${PORT}`));
