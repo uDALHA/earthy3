@@ -4,11 +4,20 @@
 const express = require('express');
 const cors = require('cors');
 const { Resend } = require('resend');
+const fetch = (...args) =>
+  import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+/* ---------------------------
+   Health check (IMPORTANT)
+---------------------------- */
+app.get('/', (req, res) => {
+  res.status(200).send('Earthy AI backend running');
+});
 
 /* ---------------------------
    Environment variables
@@ -23,9 +32,9 @@ if (!RESEND_API_KEY) console.warn('RESEND_API_KEY is not set');
 if (!LEAD_TO_EMAIL) console.warn('LEAD_TO_EMAIL is not set');
 
 /* ---------------------------
-   Resend setup
+   Resend setup (safe)
 ---------------------------- */
-const resend = new Resend(RESEND_API_KEY);
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 /* ---------------------------
    Helper: build messages
@@ -49,10 +58,7 @@ app.post('/chat', async (req, res) => {
     const { input, history = [] } = req.body || {};
 
     if (typeof input !== 'string' || !input.trim()) {
-      return res.status(400).json({
-        reply: 'Invalid request.',
-        history
-      });
+      return res.status(400).json({ reply: 'Invalid request.', history });
     }
 
     const messages = buildMessagesFromHistory(history);
@@ -61,70 +67,42 @@ app.post('/chat', async (req, res) => {
       role: 'system',
       content: `You are Earthy AI — the official AI assistant for Earthy AI.
 
-You represent a real company that provides an on-site AI assistant for service businesses
-such as roofing, plumbing, HVAC, electrical, and similar local services.
+You represent a real company that provides an on-site AI assistant for service businesses.
 
-You speak like a knowledgeable, calm, and helpful human — not a chatbot, not salesy,
-not overly cautious, and not generic.
-
-Your role is to explain the product clearly, answer questions naturally,
-and help visitors understand if it’s a good fit.
-
-Pricing starts around £170 depending on setup.
-Be transparent and confident when mentioning it.
-
-Do not ask for contact details early.
-Only suggest contact after meaningful conversation.
-
-2–4 sentences max.
-No emojis.
-No hype.
-No bullet points unless asked.`
+2–4 sentences max. No emojis.`
     });
 
     messages.push({ role: 'user', content: input });
 
-    const openaiResp = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages,
-        max_tokens: 150,
-        temperature: 0.6
-      })
-    });
-
-    if (!openaiResp.ok) {
-      const errText = await openaiResp.text();
-      console.error('OpenAI error:', errText);
-      return res.status(502).json({
-        reply: 'AI service error.',
-        history
-      });
-    }
+    const openaiResp = await fetch(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          messages,
+          max_tokens: 150,
+          temperature: 0.6
+        })
+      }
+    );
 
     const data = await openaiResp.json();
     const reply =
       data?.choices?.[0]?.message?.content?.trim() ||
-      'I’m happy to help — could you clarify that a bit?';
+      'Could you clarify that?';
 
-    const updatedHistory = [
-      ...history,
-      { author: 'ai', text: reply }
-    ];
-
-    res.json({ reply, history: updatedHistory });
-
-  } catch (err) {
-    console.error('Server error:', err);
-    res.status(500).json({
-      reply: 'Something went wrong.',
-      history: req.body?.history || []
+    res.json({
+      reply,
+      history: [...history, { author: 'ai', text: reply }]
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ reply: 'Server error.', history });
   }
 });
 
@@ -132,31 +110,23 @@ No bullet points unless asked.`
    Lead capture endpoint
 ---------------------------- */
 app.post('/api/lead', async (req, res) => {
+  if (!resend) return res.status(503).json({ success: false });
+
   try {
     const { business_name, website, email, phone, message } = req.body;
-
-    if (!business_name || !website || !email) {
+    if (!business_name || !website || !email)
       return res.status(400).json({ success: false });
-    }
 
     await resend.emails.send({
       from: 'Earthy AI <leads@resend.dev>',
       to: LEAD_TO_EMAIL,
       subject: 'New Earthy AI Demo Interest',
-      html: `
-        <h3>New Demo Request</h3>
-        <p><strong>Business:</strong> ${business_name}</p>
-        <p><strong>Website:</strong> ${website}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Phone:</strong> ${phone || 'Not provided'}</p>
-        <p><strong>Message:</strong><br>${message || '—'}</p>
-      `
+      html: `<p>${business_name} — ${email}</p>`
     });
 
     res.json({ success: true });
-
   } catch (err) {
-    console.error('Resend error:', err);
+    console.error(err);
     res.status(500).json({ success: false });
   }
 });
@@ -168,4 +138,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Earthy AI server running on port ${PORT}`);
 });
-
